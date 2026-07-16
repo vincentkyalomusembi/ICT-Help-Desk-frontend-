@@ -15,7 +15,7 @@ type Ticket = {
   created_at: string;
 };
 
-const STATUS_OPTIONS = ["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"];
+const STATUS_OPTIONS = ["OPEN", "In_progress", "Resolved", "Closed"];
 
 function toStatusLabel(status: string): "Open" | "Resolved" | "In Progress" {
   switch (status.toLowerCase()) {
