@@ -1,576 +1,234 @@
-// staff dashboard
 "use client";
-
 import Link from "next/link";
-import {
-  LifeBuoy,
-  User,
-  Clock,
-  CheckCircle,
-  AlertCircle,
-  Loader,
-  Bell,
-} from "lucide-react";
+import StatusBadge from "@/components/status-badge";
 import { useEffect, useState } from "react";
-import TicketTable from "@/components/ticket-table";
 
-interface User {
-  full_name: string;
-  email: string;
-  department?: { name: string };
+type Ticket = {
+  id: number;
+  description: string; // not issue_description
+  category: string; // enum string e.g. "HARDWARE", not { name: string }
+  priority?: string;
+  status: string;
+  created_at: string;
+};
+
+function toStatusLabel(status: string): "Open" | "Resolved" | "In Progress" {
+  switch (status.toLowerCase()) {
+    case "open":
+      return "Open";
+    case "resolved":
+    case "closed":
+      return "Resolved";
+    default:
+      return "In Progress";
+  }
 }
 
-const notices = [
-  {
-    title: "Scheduled Maintenance",
-    body: "Core systems will be offline Sat 31 May, 11pm–2am.",
-    date: "27 May 2026",
-    urgent: true,
-  },
-  {
-    title: "New ICT Policy 2025",
-    body: "Please review the updated ICT Policy on the portal.",
-    date: "20 May 2026",
-    urgent: false,
-  },
-];
-
-function getHour() {
-  const h = new Date().getHours();
-  if (h < 12) return "Good Morning";
-  if (h < 17) return "Good Afternoon";
-  return "Good Evening";
-}
-
-export default function DashboardPage() {
-  const [user, setUser] = useState<User | null>(null); // Do not seed from localStorage — session is cookie-based
-  const [tickets, setTickets] = useState<{ status: string }[]>([]);
+export default function TicketTable() {
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
       try {
-        // Verify session and enforce role — redirect away if not a staff user
-        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/staff/me`, {
+        const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tickets/`, {
           credentials: "include",
         });
-        if (!res.ok) { window.location.href = "/login"; return; }
-        setUser(await res.json());
-        const ticketRes = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/tickets/`,
-          { credentials: "include" },
-        );
-        if (ticketRes.ok) setTickets(await ticketRes.json());
-      } catch {}
+        if (res.ok) setTickets(await res.json());
+      } catch {
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
-  const fullName = user?.full_name ?? "Loading...";
-  const department = user?.department?.name ?? "National Treasury";
-  const email = user?.email ?? "";
-  const initials = fullName
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2);
-  const stats = [
-    {
-      label: "Total Raised",
-      value: tickets.length,
-      icon: AlertCircle,
-      color: "#C8962E",
-    },
-    {
-      label: "Open",
-      value: tickets.filter((t) => t.status?.toUpperCase() === "OPEN").length,
-      icon: Clock,
-      color: "#E8B84B",
-    },
-    {
-      label: "In Progress",
-      value: tickets.filter((t) => t.status?.toUpperCase() === "IN_PROGRESS").length,
-      icon: Loader,
-      color: "#6B2D0F",
-    },
-    {
-      label: "Resolved",
-      value: tickets.filter((t) =>
-        ["RESOLVED", "CLOSED"].includes(t.status?.toUpperCase())
-      ).length,
-      icon: CheckCircle,
-      color: "#2D6B0F",
-    },
-  ];
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap');
-
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        :root {
-          --gold:       #C8962E;
-          --gold-light: #E8B84B;
-          --brown:      #6B2D0F;
-          --brown-dark: #4A1E0A;
-          --cream:      #FDF8F2;
-          --border:     #EDE0D0;
-          --text:       #1A0F08;
-          --text-sub:   #7A5C44;
-        }
-
-        .dash-root {
-          width: 100%;
-          min-height: 100vh;
-          background: var(--cream);
-          font-family: 'Plus Jakarta Sans', sans-serif;
-          color: var(--text);
-          overflow-y: auto;
-          display: flex;
-          flex-direction: column;
-        }
-
-        /* ── TOPBAR ── */
-        .topbar {
-          background: #fff;
-          border-bottom: 1px solid var(--border);
-          padding: 0 2rem;
-          height: 56px;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          position: sticky;
-          top: 0;
-          z-index: 10;
-          width: 100%;
-        }
-
-        .topbar-left { font-size: 13px; color: var(--text-sub); }
-        .topbar-left span { color: var(--brown); font-weight: 600; }
-
-        .topbar-right {
-          display: flex;
-          align-items: center;
-          gap: 1rem;
-        }
-
-        .notif-btn {
-          width: 36px; height: 36px;
-          border-radius: 50%;
-          background: var(--cream);
-          border: 1px solid var(--border);
-          display: flex; align-items: center; justify-content: center;
-          cursor: pointer;
-          color: var(--text-sub);
-          position: relative;
-          transition: background 0.15s;
-        }
-
-        .notif-btn:hover { background: var(--border); }
-
-        .notif-dot {
-          position: absolute;
-          top: 6px; right: 6px;
-          width: 8px; height: 8px;
-          border-radius: 50%;
-          background: #BB0000;
-          border: 1.5px solid #fff;
-        }
-
-        .avatar {
-          width: 34px; height: 34px;
-          border-radius: 50%;
-          background: var(--brown);
-          color: #fff;
-          font-size: 12px; font-weight: 700;
-          display: flex; align-items: center; justify-content: center;
-          border: 2px solid var(--gold);
-          cursor: pointer;
-        }
-
-        /* ── CONTENT ── */
-        .dash-content {
-          padding: 2rem;
-          display: flex;
-          flex-direction: column;
-          gap: 1.75rem;
-          width: 100%;
-          flex: 1;
-        }
-
-        /* ── GREETING ── */
-        .greeting-card {
-          background: var(--brown);
-          border-radius: 16px;
-          padding: 1.75rem 2rem;
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          position: relative;
-          overflow: hidden;
-          width: 100%;
-        }
-
-        .greeting-card::before {
-          content: '';
-          position: absolute;
-          top: -60px; right: -60px;
-          width: 200px; height: 200px;
-          border-radius: 50%;
-          background: rgba(200,150,46,0.15);
-        }
-
-        .greeting-card::after {
-          content: '';
-          position: absolute;
-          bottom: -40px; right: 100px;
-          width: 120px; height: 120px;
-          border-radius: 50%;
-          background: rgba(200,150,46,0.08);
-        }
-
-        .greeting-left { position: relative; z-index: 1; }
-
-        .greeting-tag {
-          font-size: 11px; font-weight: 600;
-          letter-spacing: 1.5px; text-transform: uppercase;
-          color: var(--gold-light); margin-bottom: 0.35rem;
-        }
-
-        .greeting-name {
-          font-family: 'Playfair Display', serif;
-          font-size: 1.6rem; font-weight: 700;
-          color: #fff; margin-bottom: 0.3rem;
-        }
-
-        .greeting-dept { font-size: 13px; color: rgba(255,255,255,0.6); }
-
-        .greeting-actions {
-          display: flex; gap: 0.75rem;
-          position: relative; z-index: 1;
-          flex-wrap: wrap;
-        }
-
-        .btn-primary {
-          display: flex; align-items: center; gap: 7px;
-          background: var(--gold); color: var(--brown-dark);
-          padding: 0.6rem 1.2rem; border-radius: 8px;
-          font-size: 13px; font-weight: 700;
-          text-decoration: none;
-          transition: background 0.15s;
-          border: none; cursor: pointer; font-family: inherit;
-        }
-
-        .btn-primary:hover { background: var(--gold-light); }
-
-        .btn-ghost {
-          display: flex; align-items: center; gap: 7px;
-          background: rgba(255,255,255,0.1); color: #fff;
-          padding: 0.6rem 1.2rem; border-radius: 8px;
-          font-size: 13px; font-weight: 600;
-          text-decoration: none;
-          transition: background 0.15s;
-          border: 1px solid rgba(255,255,255,0.2);
-          cursor: pointer; font-family: inherit;
-        }
-
-        .btn-ghost:hover { background: rgba(255,255,255,0.18); }
-
-        /* ── STATS ── */
-        .stats-row {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 1rem;
-          width: 100%;
-        }
-
-        .stat-card {
-          background: #fff;
-          border-radius: 12px;
-          border: 1px solid var(--border);
-          padding: 1.25rem 1.5rem;
-          display: flex; align-items: center; gap: 1rem;
-          box-shadow: 0 2px 8px rgba(107,45,15,0.05);
-        }
-
-        .stat-icon {
-          width: 44px; height: 44px;
-          border-radius: 10px;
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-
-        .stat-value {
-          font-family: 'Playfair Display', serif;
-          font-size: 1.75rem; font-weight: 700;
-          color: var(--text); line-height: 1;
-        }
-
-        .stat-label { font-size: 12px; color: var(--text-sub); margin-top: 3px; }
-
-        /* ── TWO COL ── */
-        .two-col {
-          display: grid;
-          grid-template-columns: 1fr 320px;
-          gap: 1.5rem;
-          align-items: start;
-          width: 100%;
-        }
-
-        /* ── SECTION CARD ── */
-        .section-card {
-          background: #fff;
-          border-radius: 14px;
-          border: 1px solid var(--border);
-          overflow: hidden;
-          box-shadow: 0 2px 8px rgba(107,45,15,0.04);
-          width: 100%;
-        }
-
-        .section-header {
-          padding: 1.1rem 1.5rem;
-          border-bottom: 1px solid var(--border);
-          display: flex; align-items: center; justify-content: space-between;
-        }
-
-        .section-title { font-size: 14px; font-weight: 700; color: var(--text); }
-
-        .section-link {
-          font-size: 12px; color: var(--brown);
-          text-decoration: none;
-          display: flex; align-items: center; gap: 4px;
-          font-weight: 500;
-        }
-
-        .section-link:hover { text-decoration: underline; }
-
-        /* ── TABLE ── */
-        .ticket-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-
-        .ticket-table th {
-          padding: 0.75rem 1.5rem;
-          text-align: left;
-          font-size: 11px; font-weight: 700;
-          color: var(--text-sub);
-          letter-spacing: 0.5px; text-transform: uppercase;
-          background: #FDFAF6;
-          border-bottom: 1px solid var(--border);
-        }
-
-        .ticket-table td {
-          padding: 0.85rem 1.5rem;
-          border-bottom: 1px solid #F5EDE0;
-          color: var(--text); vertical-align: middle;
-        }
-
-        .ticket-table tr:last-child td { border-bottom: none; }
-        .ticket-table tr:hover td { background: #FDFAF6; }
-
-        .ticket-id { font-weight: 600; color: var(--brown); font-size: 12.5px; }
-        .ticket-date { font-size: 12px; color: var(--text-sub); }
-        .ticket-time { font-size: 11px; color: #B0906A; }
-
-        /* ── NOTICES ── */
-        .notice-list {
-          padding: 0.75rem 1rem;
-          display: flex; flex-direction: column; gap: 0.5rem;
-        }
-
-        .notice-item {
-          padding: 0.85rem 1rem;
-          border-radius: 10px;
-          border: 1px solid var(--border);
-          background: var(--cream);
-        }
-
-        .notice-item.urgent { border-color: #F5C8A8; background: #FFF8F3; }
-
-        .notice-urgent-tag {
-          font-size: 10px; font-weight: 700;
-          letter-spacing: 1px; text-transform: uppercase;
-          color: #BB0000; margin-bottom: 4px;
-        }
-
-        .notice-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 3px; }
-        .notice-body { font-size: 12px; color: var(--text-sub); line-height: 1.5; }
-        .notice-date { font-size: 11px; color: #B0906A; margin-top: 5px; }
-
-        /* ── QUICK LINKS ── */
-        .quick-links {
-          display: grid;
-          grid-template-columns: 1fr 1fr;
-          gap: 0.75rem;
-          padding: 1rem;
-        }
-
-        .quick-link-item {
-          display: flex; flex-direction: column;
-          align-items: center; justify-content: center;
-          gap: 6px; padding: 1rem 0.5rem;
-          border-radius: 10px;
-          background: var(--cream);
-          border: 1px solid var(--border);
-          text-decoration: none;
-          color: var(--text);
-          font-size: 12px; font-weight: 600;
-          text-align: center;
-          transition: background 0.15s, border-color 0.15s;
-        }
-
-        .quick-link-item:hover { background: #F5E8D0; border-color: var(--gold); }
-
-        .quick-link-icon {
-          width: 36px; height: 36px;
-          border-radius: 8px;
-          background: var(--brown);
-          display: flex; align-items: center; justify-content: center;
-          color: #fff;
-        }
-
-        /* ── RESPONSIVE ── */
-        @media (max-width: 1100px) {
-          .two-col { grid-template-columns: 1fr; }
-        }
-
-        @media (max-width: 768px) {
-          .stats-row { grid-template-columns: repeat(2, 1fr); }
-          .dash-content { padding: 1rem; }
-          .greeting-card { flex-direction: column; align-items: flex-start; gap: 1rem; }
-        }
-
-        @media (max-width: 480px) {
-          .stats-row { grid-template-columns: repeat(2, 1fr); }
-          .ticket-table th:nth-child(4),
-          .ticket-table td:nth-child(4) { display: none; }
-        }
-      `}</style>
-
-      <div className="dash-root">
-        {/* TOPBAR */}
-        <div className="topbar">
-          <p className="topbar-left">
-            National Treasury &nbsp;/&nbsp; <span>Employee Dashboard</span>
-          </p>
-          <div className="topbar-right">
-            <button className="notif-btn" aria-label="Notifications">
-              <Bell size={16} />
-              <span className="notif-dot" />
-            </button>
-            <div className="avatar" title={fullName}>
-              {initials}
-            </div>
-          </div>
-        </div>
-
-        <div className="dash-content">
-          {/* GREETING */}
-          <div className="greeting-card">
-            <div className="greeting-left">
-              <p className="greeting-tag">{getHour()}</p>
-              <h1 className="greeting-name">{fullName}</h1>{" "}
-              <p className="greeting-dept">
-                {department} &nbsp;·&nbsp; {email}
-              </p>
-            </div>
-            <div className="greeting-actions">
-              <Link href="/request" className="btn-primary">
-                <LifeBuoy size={15} /> Raise a Ticket
-              </Link>
-              <Link href="/profile" className="btn-ghost">
-                <User size={15} /> My Profile
-              </Link>
-            </div>
-          </div>
-
-          {/* STATS */}
-          <div className="stats-row">
-            {stats.map((s) => {
-              const Icon = s.icon;
-              return (
-                <div className="stat-card" key={s.label}>
-                  <div
-                    className="stat-icon"
-                    style={{ background: `${s.color}18` }}
-                  >
-                    <Icon size={20} color={s.color} />
-                  </div>
-                  <div>
-                    <p className="stat-value">{s.value}</p>
-                    <p className="stat-label">{s.label}</p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* TWO COLUMN */}
-          <div className="two-col">
-            {/* TICKETS */}
-            <TicketTable />
-            {/* RIGHT COLUMN */}
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: "1.5rem",
-              }}
-            >
-              {/* QUICK ACTIONS */}
-              <div className="section-card">
-                <div className="section-header">
-                  <p className="section-title">Quick Actions</p>
-                </div>
-                <div className="quick-links">
-                  <Link href="/request" className="quick-link-item">
-                    <div className="quick-link-icon">
-                      <LifeBuoy size={16} />
-                    </div>
-                    Request Assistance
-                  </Link>
-                  <Link href="/tickets" className="quick-link-item">
-                    <div className="quick-link-icon">
-                      <Clock size={16} />
-                    </div>
-                    Ticket History
-                  </Link>
-                  <Link href="/profile" className="quick-link-item">
-                    <div className="quick-link-icon">
-                      <User size={16} />
-                    </div>
-                    My Profile
-                  </Link>
-                  <Link href="/support" className="quick-link-item">
-                    <div className="quick-link-icon">
-                      <Bell size={16} />
-                    </div>
-                    ICT Support
-                  </Link>
-                </div>
-              </div>
-
-              {/* NOTICES */}
-              <div className="section-card">
-                <div className="section-header">
-                  <p className="section-title">ICT Notices</p>
-                </div>
-                <div className="notice-list">
-                  {notices.map((n, i) => (
-                    <div
-                      key={i}
-                      className={`notice-item${n.urgent ? " urgent" : ""}`}
-                    >
-                      {n.urgent && (
-                        <p className="notice-urgent-tag">⚠ Urgent</p>
-                      )}
-                      <p className="notice-title">{n.title}</p>
-                      <p className="notice-body">{n.body}</p>
-                      <p className="notice-date">{n.date}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+    <div
+      style={{
+        background: "#fff",
+        borderRadius: 14,
+        border: "1px solid #EDE0D0",
+        overflow: "hidden",
+        fontFamily: "'Plus Jakarta Sans', sans-serif",
+      }}
+    >
+      {/* Header */}
+      <div
+        style={{ padding: "1rem 1.25rem", borderBottom: "1px solid #EDE0D0" }}
+      >
+        <h2
+          style={{
+            fontFamily: "'Playfair Display', serif",
+            fontSize: "1.4rem",
+            fontWeight: 700,
+            color: "#1A0F08",
+          }}
+        >
+          Ticket History
+        </h2>
       </div>
-    </>
+
+      {/* Table */}
+      <div style={{ overflowX: "auto" }}>
+        <table
+          style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}
+        >
+          <thead>
+            <tr>
+              {[
+                "Date/Time",
+                "Ticket ID",
+                "Issue",
+                "Category/Priority",
+                "Status",
+                "Action",
+              ].map((h) => (
+                <th
+                  key={h}
+                  style={{
+                    padding: "0.7rem 1.25rem",
+                    textAlign: "left",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: "#7A5C44",
+                    letterSpacing: "0.5px",
+                    textTransform: "uppercase",
+                    background: "#FDFAF6",
+                    borderBottom: "1px solid #EDE0D0",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody>
+            {loading ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  style={{
+                    padding: "2.5rem",
+                    textAlign: "center",
+                    color: "#7A5C44",
+                    fontSize: 13,
+                  }}
+                >
+                  Loading tickets...
+                </td>
+              </tr>
+            ) : tickets.length === 0 ? (
+              <tr>
+                <td
+                  colSpan={6}
+                  style={{
+                    padding: "2.5rem",
+                    textAlign: "center",
+                    color: "#7A5C44",
+                    fontSize: 13,
+                  }}
+                >
+                  No tickets found.
+                </td>
+              </tr>
+            ) : (
+              tickets.map((ticket) => (
+                <tr
+                  key={ticket.id}
+                  style={{ borderBottom: "1px solid #F5EDE0" }}
+                >
+                  <td
+                    style={{
+                      padding: "0.9rem 1.25rem",
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontWeight: 600,
+                        color: "#1A0F08",
+                        fontSize: 13,
+                      }}
+                    >
+                      {new Date(ticket.created_at).toLocaleDateString()}
+                    </div>
+                    <div
+                      style={{ fontSize: 11, color: "#7A5C44", marginTop: 2 }}
+                    >
+                      {new Date(ticket.created_at).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </div>
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.9rem 1.25rem",
+                      verticalAlign: "middle",
+                      fontWeight: 700,
+                      color: "#6B2D0F",
+                    }}
+                  >
+                    TKT-{String(ticket.id).padStart(3, "0")}
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.9rem 1.25rem",
+                      verticalAlign: "middle",
+                      color: "#1A0F08",
+                      maxWidth: 260,
+                    }}
+                  >
+                    {ticket.description}
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.9rem 1.25rem",
+                      verticalAlign: "middle",
+                      color: "#7A5C44",
+                      fontSize: 12,
+                    }}
+                  >
+                    {ticket.category}
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.9rem 1.25rem",
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    <StatusBadge status={toStatusLabel(ticket.status)} />
+                  </td>
+                  <td
+                    style={{
+                      padding: "0.9rem 1.25rem",
+                      verticalAlign: "middle",
+                    }}
+                  >
+                    <Link
+                      href={`/tickets/${ticket.id}`}
+                      style={{
+                        display: "inline-block",
+                        padding: "0.4rem 0.9rem",
+                        borderRadius: 6,
+                        background: "#6B2D0F",
+                        color: "#fff",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        textDecoration: "none",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      View
+                    </Link>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   );
 }
