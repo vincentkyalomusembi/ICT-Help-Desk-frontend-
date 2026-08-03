@@ -15,24 +15,19 @@ interface AdminUser {
   department?: { name: string };
 }
 
-interface IctPersonnel {
+interface DashboardPersonnel {
   id: number;
   staff_id: string;
   availability: string;
   specialization: string | null;
   is_active: boolean;
+  full_name: string | null;
+  department: string | null;
 }
 
-interface StaffItem {
-  id: string;
-  full_name: string;
-  email: string;
-}
-
-interface TicketItem {
+interface DashboardTicket {
   id: number;
   title: string;
-  description: string;
   category: string;
   status: string;
   staff_id: string;
@@ -42,27 +37,25 @@ interface TicketItem {
   closed_at: string | null;
 }
 
-interface TicketSummary {
-  open?: number;
-  in_progress?: number;
-  closed?: number;
-}
-
-interface AssetItem {
-  id: number;
-  asset_tag: string;
-  device_type: string;
-  brand: string;
-  model: string;
-  condition: string;
-}
-
-interface SessionItem {
+interface DashboardSession {
   id: number;
   staff_id: string;
   ip_address?: string;
   login_at: string;
   is_active: boolean;
+  staff_name: string | null;
+  staff_email: string | null;
+}
+
+interface AdminDashboardResponse {
+  ticket_summary: { open?: number; in_progress?: number; closed?: number };
+  queued_count: number;
+  recent_tickets: DashboardTicket[];
+  personnel: DashboardPersonnel[];
+  assets: { total: number; by_type: Record<string, number> };
+  staff_total: number;
+  staff_map: Record<string, { full_name: string; email: string }>;
+  active_sessions: DashboardSession[];
 }
 
 // ── Helpers ───────────────────────────────────────────────────
@@ -130,7 +123,7 @@ const STALE = 60 * 1000; // 1 minute
 export default function AdminDashboardPage() {
   const API = process.env.NEXT_PUBLIC_API_URL;
 
-  // ── Queries ──────────────────────────────────────────────────
+  // ── Queries — just 2 now instead of 8 ───────────────────────
 
   const { data: user } = useQuery<AdminUser>({
     queryKey: ["admin-me"],
@@ -142,96 +135,29 @@ export default function AdminDashboardPage() {
     staleTime: STALE,
   });
 
-  const { data: summary = {} } = useQuery<TicketSummary>({
-    queryKey: ["admin-ticket-summary"],
-    queryFn: async () => {
-      const res = await fetch(`${API}/tickets/admin/summary`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch summary");
-      return res.json();
-    },
-    staleTime: STALE,
-  });
-
-  const { data: personnel = [] } = useQuery<IctPersonnel[]>({
-    queryKey: ["admin-personnel"],
-    queryFn: async () => {
-      const res = await fetch(`${API}/ict-personnel/`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch personnel");
-      const raw = await res.json();
-      return Array.isArray(raw) ? raw : raw.personnel ?? [];
-    },
-    staleTime: STALE,
-  });
-
-  const { data: recentTickets = [] } = useQuery<TicketItem[]>({
-    queryKey: ["admin-recent-tickets"],
-    queryFn: async () => {
-      const res = await fetch(`${API}/tickets/?limit=5`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch tickets");
-      const raw = await res.json();
-      return Array.isArray(raw) ? raw : raw.tickets ?? [];
-    },
-    staleTime: STALE,
-  });
-
-  const { data: queuedCount = 0 } = useQuery<number>({
-    queryKey: ["admin-queued-count"],
-    queryFn: async () => {
-      const res = await fetch(`${API}/tickets/admin/queued`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch queued");
-      const queued: TicketItem[] = await res.json();
-      return Array.isArray(queued) ? queued.length : 0;
-    },
-    staleTime: STALE,
-  });
-
-  const { data: assets = [] } = useQuery<AssetItem[]>({
-    queryKey: ["admin-assets"],
-    queryFn: async () => {
-      const res = await fetch(`${API}/assets/`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch assets");
-      const raw = await res.json();
-      return Array.isArray(raw) ? raw : raw.assets ?? [];
-    },
-    staleTime: STALE,
-  });
-
-  // Staff query — also derives staffMap and totalStaff in one place
-  const { data: staffData = { staffMap: {}, totalStaff: 0 } } = useQuery({
-    queryKey: ["admin-staff"],
-    queryFn: async () => {
-      const res = await fetch(`${API}/staff/?limit=200`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch staff");
-      const raw = await res.json();
-      const staffArray: StaffItem[] = Array.isArray(raw) ? raw : raw.staff ?? [];
-      const staffMap = staffArray.reduce<Record<string, StaffItem>>((acc, s) => {
-        acc[s.id] = s;
-        return acc;
-      }, {});
-      return { staffMap, totalStaff: staffArray.length };
-    },
-    staleTime: STALE,
-  });
-
-  const { staffMap, totalStaff } = staffData;
-
-  // Sessions — separate so Refresh button only refetches this one query
   const {
-    data: sessions = [],
-    isFetching: refreshingSessions,
-    refetch: refetchSessions,
-  } = useQuery<SessionItem[]>({
-    queryKey: ["admin-sessions"],
+    data: dashboard,
+    isFetching: refreshingDashboard,
+    refetch: refetchDashboard,
+  } = useQuery<AdminDashboardResponse>({
+    queryKey: ["admin-dashboard"],
     queryFn: async () => {
-      const res = await fetch(
-        `${API}/auth/sessions?active_only=true&limit=10`,
-        { credentials: "include" }
-      );
-      if (!res.ok) throw new Error("Failed to fetch sessions");
+      const res = await fetch(`${API}/dashboard/admin`, { credentials: "include" });
+      if (!res.ok) throw new Error("Failed to fetch dashboard");
       return res.json();
     },
     staleTime: STALE,
   });
+
+  const summary        = dashboard?.ticket_summary ?? {};
+  const personnel       = dashboard?.personnel ?? [];
+  const recentTickets   = dashboard?.recent_tickets ?? [];
+  const queuedCount     = dashboard?.queued_count ?? 0;
+  const assetsTotal     = dashboard?.assets.total ?? 0;
+  const assetsByType    = dashboard?.assets.by_type ?? {};
+  const totalStaff      = dashboard?.staff_total ?? 0;
+  const staffMap        = dashboard?.staff_map ?? {};
+  const sessions        = dashboard?.active_sessions ?? [];
 
   // ── Derived values ────────────────────────────────────────────
 
@@ -250,18 +176,18 @@ export default function AdminDashboardPage() {
   });
 
   const STATS = [
-    { label: "Total Staff",   value: loading ? "—" : String(totalStaff),          icon: Users,   color: "#C8962E" },
-    { label: "Open Tickets",  value: loading ? "—" : String(summary.open ?? 0),   icon: Ticket,  color: "#6B2D0F" },
-    { label: "Total Assets",  value: loading ? "—" : String(assets.length),        icon: Package, color: "#C8962E" },
-    { label: "ICT Available", value: loading ? "—" : String(availableCount),       icon: Monitor, color: "#2D6B0F" },
+    { label: "Total Staff",   value: loading ? "—" : String(totalStaff),        icon: Users,   color: "#C8962E" },
+    { label: "Open Tickets",  value: loading ? "—" : String(summary.open ?? 0), icon: Ticket,  color: "#6B2D0F" },
+    { label: "Total Assets",  value: loading ? "—" : String(assetsTotal),       icon: Package, color: "#C8962E" },
+    { label: "ICT Available", value: loading ? "—" : String(availableCount),    icon: Monitor, color: "#2D6B0F" },
   ];
 
-  const assetGroups = assets.reduce<Record<string, number>>((acc, a) => {
-    const key = a.device_type
+  const assetGroups = Object.entries(assetsByType).reduce<Record<string, number>>((acc, [type, count]) => {
+    const key = type
       .replace(/_/g, " ")
       .toLowerCase()
       .replace(/\b\w/g, c => c.toUpperCase());
-    acc[key] = (acc[key] ?? 0) + 1;
+    acc[key] = count;
     return acc;
   }, {});
 
@@ -616,9 +542,6 @@ export default function AdminDashboardPage() {
                       const assignedPersonnel = t.assigned_to_id
                         ? personnel.find(p => p.id === t.assigned_to_id)
                         : null;
-                      const assignedStaff = assignedPersonnel
-                        ? staffMap[assignedPersonnel.staff_id]
-                        : null;
                       const raisedBy = staffMap[t.staff_id];
 
                       return (
@@ -640,8 +563,8 @@ export default function AdminDashboardPage() {
                           <td style={{ fontSize: 12.5 }}>
                             {t.assigned_to_id === null ? (
                               <span className="queued-badge">Unassigned</span>
-                            ) : assignedStaff ? (
-                              assignedStaff.full_name
+                            ) : assignedPersonnel?.full_name ? (
+                              assignedPersonnel.full_name
                                 .split(" ")
                                 .map((n, i, arr) => i === arr.length - 1 ? n[0] + "." : n)
                                 .join(" ")
@@ -673,8 +596,7 @@ export default function AdminDashboardPage() {
                   {personnel.length === 0 ? (
                     <p className="empty-state">No ICT personnel yet.</p>
                   ) : personnel.map((p) => {
-                    const s = staffMap[p.staff_id];
-                    const name = s?.full_name ?? `Staff ${p.staff_id.slice(0, 6)}`;
+                    const name = p.full_name ?? `Staff ${p.staff_id.slice(0, 6)}`;
                     const availDot =
                       p.availability === "available" && p.is_active ? "#2D6B0F" :
                       p.availability === "busy"                      ? "#C8962E" :
@@ -708,16 +630,16 @@ export default function AdminDashboardPage() {
                   <Link href="/admin/assets" className="section-link">View all</Link>
                 </div>
                 <div className="asset-list">
-                  {assets.length === 0 ? (
+                  {assetsTotal === 0 ? (
                     <p className="empty-state">No assets recorded yet.</p>
                   ) : (
                     Object.entries(assetGroups).slice(0, 5).map(([type, count]) => {
-                      const pct = Math.round((count / assets.length) * 100);
+                      const pct = Math.round((count / assetsTotal) * 100);
                       return (
                         <div key={type}>
                           <div className="asset-meta">
                             <span className="asset-name">{type}</span>
-                            <span className="asset-count">{count} of {assets.length}</span>
+                            <span className="asset-count">{count} of {assetsTotal}</span>
                           </div>
                           <div className="bar-track">
                             <div className="bar-fill" style={{ width: `${pct}%` }} />
@@ -737,39 +659,36 @@ export default function AdminDashboardPage() {
             <div className="section-header">
               <p className="section-title">Active Sessions</p>
               <button
-                className={`refresh-btn${refreshingSessions ? " spinning" : ""}`}
-                onClick={() => refetchSessions()}
-                disabled={refreshingSessions}
+                className={`refresh-btn${refreshingDashboard ? " spinning" : ""}`}
+                onClick={() => refetchDashboard()}
+                disabled={refreshingDashboard}
               >
                 <RefreshCw size={13} />
-                {refreshingSessions ? "Refreshing…" : "Refresh"}
+                {refreshingDashboard ? "Refreshing…" : "Refresh"}
               </button>
             </div>
             <div className="sessions-list">
               {sessions.length === 0 ? (
                 <p className="empty-state">No active sessions.</p>
-              ) : sessions.slice(0, 10).map((s) => {
-                const staffMember = staffMap[s.staff_id];
-                return (
-                  <div key={s.id} className="session-row">
-                    {s.is_active
-                      ? <Wifi size={14} color="#2D6B0F" />
-                      : <WifiOff size={14} color="var(--text-sub)" />
-                    }
-                    <span className="session-user">
-                      {staffMember?.full_name ?? staffMember?.email ?? s.ip_address ?? s.staff_id}
+              ) : sessions.slice(0, 10).map((s) => (
+                <div key={s.id} className="session-row">
+                  {s.is_active
+                    ? <Wifi size={14} color="#2D6B0F" />
+                    : <WifiOff size={14} color="var(--text-sub)" />
+                  }
+                  <span className="session-user">
+                    {s.staff_name ?? s.staff_email ?? s.ip_address ?? s.staff_id}
+                  </span>
+                  <span className="session-time">Started {formatTime(s.login_at)}</span>
+                  {s.is_active ? (
+                    <span className="session-live">
+                      <span className="live-dot" /> Live
                     </span>
-                    <span className="session-time">Started {formatTime(s.login_at)}</span>
-                    {s.is_active ? (
-                      <span className="session-live">
-                        <span className="live-dot" /> Live
-                      </span>
-                    ) : (
-                      <span className="session-ended">Ended</span>
-                    )}
-                  </div>
-                );
-              })}
+                  ) : (
+                    <span className="session-ended">Ended</span>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
 
