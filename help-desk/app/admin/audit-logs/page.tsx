@@ -96,7 +96,7 @@ export default function AuditLogsPage() {
   const { data: logs = [], isFetching, isLoading: loading, error: queryError } = useQuery<AuditLog[]>({
     queryKey: ["audit-logs"],
     queryFn: async () => {
-      const res = await fetch(`${API}/audit/?limit=500`, { credentials: "include" });
+      const res = await fetch(`${API}/audit/?limit=50`, { credentials: "include" });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.detail ?? `Error ${res.status}`);
